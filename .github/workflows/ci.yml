@@ -27,5 +27,5 @@ jobs:
         with:
           name: Built binaries
           path: |
-            */${{ matrix.os }}/release/fix-name-case
-            */${{ matrix.os }}/release/fix-name-case.exe
+            */${{ matrix.os }}/release/git-del-branches
+            */${{ matrix.os }}/release/git-del-branches.exe
