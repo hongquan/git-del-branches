@@ -1,3 +1,4 @@
+use clap::Parser;
 use color_eyre::Result;
 use console::{style, Emoji};
 use eyre::Context;
@@ -7,6 +8,10 @@ use inquire::{Confirm, MultiSelect};
 use git2_credentials::CredentialHandler;
 
 const EXCLUDES: &[&str] = &["master", "main", "develop", "development"];
+
+#[derive(Parser)]
+#[command(author, version, about)]
+struct Cli {}
 
 fn get_branches(repo: &Repository, names: Vec<String>) -> Vec<Branch> {
     names
@@ -53,6 +58,7 @@ fn delete_upstream_branch(mut branch: Branch, origin: &mut Remote, opts: &mut Pu
 
 fn main() -> Result<()> {
     color_eyre::install()?;
+    Cli::parse();
     let repo = Repository::discover(".").wrap_err("Not a Git working folder")?;
     let branches = repo.branches(Some(BranchType::Local))?;
     let staying_in_branch = repo.head().ok().map(|r| r.is_branch()).unwrap_or(false);

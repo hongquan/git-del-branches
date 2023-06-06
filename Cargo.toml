@@ -14,6 +14,7 @@ exclude = [".github", "debian", "screenshot.png"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "4.3.2", features = ["derive"] }
 color-eyre = "0.6.2"
 console = { version = "0.15.7", features = ["windows-console-colors"] }
 eyre = "0.6.8"
