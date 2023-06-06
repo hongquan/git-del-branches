@@ -1,9 +1,10 @@
 use color_eyre::Result;
 use console::{style, Emoji};
 use eyre::Context;
-use git2::{Branch, BranchType, Repository};
+use git2::{Branch, BranchType, Repository, Remote, RemoteCallbacks, PushOptions};
 use inquire::error::InquireError;
 use inquire::{Confirm, MultiSelect};
+use git2_credentials::CredentialHandler;
 
 const EXCLUDES: &[&str] = &["master", "main", "develop", "development"];
 
@@ -28,6 +29,26 @@ fn show_list_of_branches(branch_pairs: &Vec<(Branch, Option<Branch>)>) {
         })
         .collect();
     eprintln!("{}", lines.join("\n"));
+}
+
+fn get_local_name<'a>(branch: &'a Branch) -> Option<&'a str> {
+    let name = branch.name().ok().flatten()?;
+    name.strip_prefix("origin/").or(Some(name))
+}
+
+fn delete_upstream_branch(mut branch: Branch, origin: &mut Remote, opts: &mut PushOptions) -> Option<()> {
+    let branch_name = get_local_name(&branch)?;
+    let refspec = format!(":refs/heads/{}", branch_name);
+    let result = origin.push(&[&refspec], Some(opts));
+    if result.is_err() {
+        let msg = format!("Failed to delete upstream branch {}", branch_name);
+        eprintln!(
+            "{} {}",
+            Emoji("⚠️", "!"),
+            style(msg).yellow()
+        );
+    }
+    branch.delete().ok()
 }
 
 fn main() -> Result<()> {
@@ -81,12 +102,20 @@ fn main() -> Result<()> {
         })
         .collect();
     show_list_of_branches(&branch_pairs);
-    for (mut lb, mut rb) in branch_pairs {
+    let mut remote_callback = RemoteCallbacks::new();
+    let git_config = git2::Config::open_default()?;
+    let mut credential_handler = CredentialHandler::new(git_config);
+    remote_callback.credentials(move |url, username, allowed| {
+        credential_handler.try_next_credential(url, username, allowed)
+    });
+    let mut origin = repo.find_remote("origin").ok();
+    let mut opts = PushOptions::new();
+    opts.remote_callbacks(remote_callback);
+    for (mut lb, rb) in branch_pairs {
         lb.delete().ok();
-        match rb.as_mut() {
-            Some(b) => b.delete().ok(),
-            None => Some(()),
-        };
+        if rb.is_some() && origin.is_some() {
+            delete_upstream_branch(rb.unwrap(), &mut origin.as_mut().unwrap(), &mut opts);
+        }
     }
     eprintln!("{} {}", Emoji("🎉", "v"), style("Done!").bright().green());
     Ok(())
