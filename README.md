@@ -1,5 +1,7 @@
 # git-del-branches
 
+[![crate](https://badgen.net/crates/v/git-del-branches?icon=terminal)](https://crates.io/crates/git-del-branches)
+
 Tool to select and delete multiple Git branches.
 
 ## Install
