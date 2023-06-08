@@ -5,6 +5,7 @@ use eyre::Context;
 use git2::{Branch, BranchType, Repository, Remote, RemoteCallbacks, PushOptions};
 use inquire::error::InquireError;
 use inquire::{Confirm, MultiSelect};
+use inquire::ui::{RenderConfig, Styled};
 use git2_credentials::CredentialHandler;
 
 const EXCLUDES: &[&str] = &["master", "main", "develop", "development"];
@@ -56,17 +57,27 @@ fn delete_upstream_branch(mut branch: Branch, origin: &mut Remote, opts: &mut Pu
     branch.delete().ok()
 }
 
+fn get_render_config() -> RenderConfig {
+    let mut config = RenderConfig::default();
+    config.scroll_down_prefix = Styled::new("▼");
+    config.scroll_up_prefix = Styled::new("▲");
+    config
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
     Cli::parse();
+    inquire::set_global_render_config(get_render_config());
     let repo = Repository::discover(".").wrap_err("Not a Git working folder")?;
     let branches = repo.branches(Some(BranchType::Local))?;
     let staying_in_branch = repo.head().ok().map(|r| r.is_branch()).unwrap_or(false);
-    let names: Vec<String> = branches
-        .filter_map(|b| {
-            let branch = b.ok().map(|x| x.0)?;
+    let names: Vec<String> = branches.flat_map(|b| b)
+        .filter_map(|(branch, _type)| {
+            if branch.is_head() {
+                return None;
+            }
             let n = branch.name().ok()??;
-            if branch.is_head() || EXCLUDES.contains(&n) {
+            if EXCLUDES.contains(&n) {
                 None
             } else {
                 Some(n.to_string())
