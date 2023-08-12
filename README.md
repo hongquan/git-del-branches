@@ -7,7 +7,7 @@ Tool to select and delete multiple Git branches.
 ## Install
 
 ```console
-$ crate install git-del-branches
+$ cargo install git-del-branches
 ```
 
 ## Usage
