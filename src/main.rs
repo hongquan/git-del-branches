@@ -46,7 +46,8 @@ fn delete_upstream_branch(mut branch: Branch, origin: &mut Remote, opts: &mut Pu
     let branch_name = get_local_name(&branch)?;
     let refspec = format!(":refs/heads/{}", branch_name);
     let result = origin.push(&[&refspec], Some(opts));
-    if result.is_err() {
+    if let Err(e) = result {
+        eprintln!("  {}", style(e.message()).dim());
         let msg = format!("Failed to delete upstream branch {}", branch_name);
         eprintln!(
             "{} {}",
