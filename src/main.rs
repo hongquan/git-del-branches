@@ -124,6 +124,12 @@ fn main() -> Result<()> {
     let git_config = git2::Config::open_default()?;
     let mut credential_handler = CredentialHandler::new(git_config);
     remote_callback.credentials(move |url, username, allowed| {
+        let msg = if let Some(name) = username {
+            format!("Try authenticating with \"{}\" username for {}...", name, url)
+        } else {
+            format!("Try authenticating for {}, without username...", url)
+        };
+        eprintln!("  {}", style(msg).dim());
         credential_handler.try_next_credential(url, username, allowed)
     });
     let mut origin = repo.find_remote("origin").ok();
@@ -131,9 +137,9 @@ fn main() -> Result<()> {
     opts.remote_callbacks(remote_callback);
     for (mut lb, rb) in branch_pairs {
         lb.delete().ok();
-        if rb.is_some() && origin.is_some() {
-            delete_upstream_branch(rb.unwrap(), &mut origin.as_mut().unwrap(), &mut opts);
-        }
+        if let Some((orig, branch)) = origin.as_mut().zip(rb) {
+            delete_upstream_branch(branch, orig, &mut opts);
+        };
     }
     eprintln!("{} {}", Emoji("🎉", "v"), style("Done!").bright().green());
     Ok(())
