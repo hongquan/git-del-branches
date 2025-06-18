@@ -26,6 +26,10 @@ $ git del-branches
 
 ![Screenshot](screenshot.png)
 
+Terminal screencast:
+
+[![asciicast](https://asciinema.org/a/723705.svg)](https://asciinema.org/a/723705)
+
 ## Credit
 
 - [Nguyễn Hồng Quân](https://quan.hoabinh.vn)
