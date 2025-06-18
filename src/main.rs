@@ -1,12 +1,12 @@
 use clap::Parser;
 use color_eyre::Result;
-use console::{style, Emoji};
+use console::{Emoji, style};
 use eyre::Context;
-use git2::{Branch, BranchType, Repository, Remote, RemoteCallbacks, PushOptions};
-use inquire::error::InquireError;
-use inquire::{Confirm, MultiSelect};
-use inquire::ui::{RenderConfig, Styled};
+use git2::{Branch, BranchType, PushOptions, Remote, RemoteCallbacks, Repository};
 use git2_credentials::CredentialHandler;
+use inquire::error::InquireError;
+use inquire::ui::{RenderConfig, Styled};
+use inquire::{Confirm, MultiSelect};
 
 const EXCLUDES: &[&str] = &["master", "main", "develop", "development"];
 
@@ -26,7 +26,7 @@ fn show_list_of_branches(branch_pairs: &Vec<(Branch, Option<Branch>)>) {
         .iter()
         .filter_map(|(lb, rb)| {
             let local_name = lb.name().ok()??;
-            let upstream_name = rb.as_ref().map(|b| b.name().ok()).flatten().flatten();
+            let upstream_name = rb.as_ref().and_then(|n| n.name().ok()).flatten();
             let line = match upstream_name {
                 Some(name) => format!(" {local_name} ({name})"),
                 None => format!(" {local_name}"),
@@ -42,27 +42,28 @@ fn get_local_name<'a>(branch: &'a Branch) -> Option<&'a str> {
     name.strip_prefix("origin/").or(Some(name))
 }
 
-fn delete_upstream_branch(mut branch: Branch, origin: &mut Remote, opts: &mut PushOptions) -> Option<()> {
+fn delete_upstream_branch(
+    mut branch: Branch,
+    origin: &mut Remote,
+    opts: &mut PushOptions,
+) -> Option<()> {
     let branch_name = get_local_name(&branch)?;
     let refspec = format!(":refs/heads/{}", branch_name);
     let result = origin.push(&[&refspec], Some(opts));
     if let Err(e) = result {
         eprintln!("  {}", style(e.message()).dim());
         let msg = format!("Failed to delete upstream branch {}", branch_name);
-        eprintln!(
-            "{} {}",
-            Emoji("⚠️", "!"),
-            style(msg).yellow()
-        );
+        eprintln!("{} {}", Emoji("⚠️", "!"), style(msg).yellow());
     }
     branch.delete().ok()
 }
 
-fn get_render_config() -> RenderConfig {
-    let mut config = RenderConfig::default();
-    config.scroll_down_prefix = Styled::new("▼");
-    config.scroll_up_prefix = Styled::new("▲");
-    config
+fn get_render_config() -> RenderConfig<'static> {
+    RenderConfig {
+        scroll_up_prefix: Styled::new("▲"),
+        scroll_down_prefix: Styled::new("▼"),
+        ..Default::default()
+    }
 }
 
 fn main() -> Result<()> {
@@ -72,7 +73,8 @@ fn main() -> Result<()> {
     let repo = Repository::discover(".").wrap_err("Not a Git working folder")?;
     let branches = repo.branches(Some(BranchType::Local))?;
     let staying_in_branch = repo.head().ok().map(|r| r.is_branch()).unwrap_or(false);
-    let names: Vec<String> = branches.flat_map(|b| b)
+    let names: Vec<String> = branches
+        .flatten()
         .filter_map(|(branch, _type)| {
             if branch.is_head() {
                 return None;
@@ -88,7 +90,13 @@ fn main() -> Result<()> {
     if names.is_empty() {
         eprintln!("No branches eligible to delete.");
         if staying_in_branch {
-            eprintln!("{}", style("You can not delete the branch to are staying in. Please switch to another one.").yellow());
+            eprintln!(
+                "{}",
+                style(
+                    "You can not delete the branch to are staying in. Please switch to another one."
+                )
+                .yellow()
+            );
         }
         return Ok(());
     }
@@ -125,7 +133,10 @@ fn main() -> Result<()> {
     let mut credential_handler = CredentialHandler::new(git_config);
     remote_callback.credentials(move |url, username, allowed| {
         let msg = if let Some(name) = username {
-            format!("Try authenticating with \"{}\" username for {}...", name, url)
+            format!(
+                "Try authenticating with \"{}\" username for {}...",
+                name, url
+            )
         } else {
             format!("Try authenticating for {}, without username...", url)
         };

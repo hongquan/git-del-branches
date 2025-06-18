@@ -3,7 +3,7 @@ name = "git-del-branches"
 version = "0.4.0"
 authors = ["Nguyễn Hồng Quân <ng.hong.quan@gmail.com>"]
 license = "GPL-3.0-or-later"
-edition = "2021"
+edition = "2024"
 description = "Git tool to select and delete multiple branches"
 readme = "README.md"
 homepage = "https://github.com/hongquan/git-del-branches"
@@ -14,11 +14,11 @@ exclude = [".github", "debian", "screenshot.png"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.3.2", features = ["derive"] }
-color-eyre = "0.6.2"
-console = { version = "0.15.7", features = ["windows-console-colors"] }
-eyre = "0.6.8"
+clap = { version = "4.5.40", features = ["derive"] }
+color-eyre = "0.6.5"
+console = { version = "0.15.11", features = ["windows-console-colors"] }
+eyre = "0.6.12"
 format-bytes = "0.3.0"
-git2 = "0.18.1"
-git2_credentials = "0.13.0"
-inquire = "0.6.2"
+git2 = "0.20.2"
+git2_credentials = "0.15.0"
+inquire = "0.7.5"
