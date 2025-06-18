@@ -17,7 +17,7 @@ jobs:
       - name: Archive built files
         uses: actions/upload-artifact@v4
         with:
-          name: Built binaries
+          name: git-del-branches_{{ matrix.os }}
           path: |
             */${{ matrix.os }}/release/git-del-branches
             */${{ matrix.os }}/release/git-del-branches.exe
