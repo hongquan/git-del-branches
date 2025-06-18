@@ -1,6 +1,6 @@
 [package]
 name = "git-del-branches"
-version = "0.4.0"
+version = "1.0.0"
 authors = ["Nguyễn Hồng Quân <ng.hong.quan@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2024"
@@ -21,4 +21,6 @@ eyre = "0.6.12"
 format-bytes = "0.3.0"
 git2 = "0.20.2"
 git2_credentials = "0.15.0"
+human-units = "0.3.0"
 inquire = "0.7.5"
+verynicetable = "0.6.2"

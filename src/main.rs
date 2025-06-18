@@ -1,12 +1,18 @@
+use std::fmt;
+use std::time::{Duration, SystemTime};
+
 use clap::Parser;
 use color_eyre::Result;
 use console::{Emoji, style};
 use eyre::Context;
-use git2::{Branch, BranchType, PushOptions, Remote, RemoteCallbacks, Repository};
+use git2::{Branch, BranchType, Error, PushOptions, Remote, RemoteCallbacks, Repository};
 use git2_credentials::CredentialHandler;
+use human_units::FormatDuration;
 use inquire::error::InquireError;
+use inquire::list_option::ListOption;
 use inquire::ui::{RenderConfig, Styled};
 use inquire::{Confirm, MultiSelect};
+use verynicetable::Table;
 
 const EXCLUDES: &[&str] = &["master", "main", "develop", "development"];
 
@@ -14,27 +20,87 @@ const EXCLUDES: &[&str] = &["master", "main", "develop", "development"];
 #[command(author, version, about)]
 struct Cli {}
 
-fn get_branches(repo: &Repository, names: Vec<String>) -> Vec<Branch> {
-    names
-        .into_iter()
-        .filter_map(|n| repo.find_branch(&n, BranchType::Local).ok())
-        .collect::<Vec<Branch>>()
+struct BranchChoice<'repo> {
+    local: Branch<'repo>,
+    upstream: Option<Branch<'repo>>,
+    branch_name: String,
+    author_name: Option<String>,
+    commit_time: SystemTime,
 }
 
-fn show_list_of_branches(branch_pairs: &Vec<(Branch, Option<Branch>)>) {
-    let lines: Vec<String> = branch_pairs
+impl<'repo> fmt::Display for BranchChoice<'repo> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let upstream = if self.upstream.is_some() {
+            " (🔭)"
+        } else {
+            ""
+        };
+        let author = self.author_name.as_deref().unwrap_or("no-name");
+        let dur = SystemTime::now()
+            .duration_since(self.commit_time)
+            .unwrap_or_default();
+        let ago = human_units::Duration(dur).format_duration();
+        write!(
+            f,
+            "{}{} 🧒 {} ⏰ {} ago",
+            self.branch_name, upstream, author, ago
+        )
+    }
+}
+
+fn format_final_answers(opts: &[ListOption<&BranchChoice>]) -> String {
+    let data: Vec<_> = opts
         .iter()
-        .filter_map(|(lb, rb)| {
-            let local_name = lb.name().ok()??;
-            let upstream_name = rb.as_ref().and_then(|n| n.name().ok()).flatten();
-            let line = match upstream_name {
-                Some(name) => format!(" {local_name} ({name})"),
-                None => format!(" {local_name}"),
-            };
-            Some(line)
+        .map(|o| {
+            let c = o.value;
+            let remote_name = c
+                .upstream
+                .as_ref()
+                .and_then(|b| b.name().ok())
+                .flatten()
+                .unwrap_or_default();
+            let author = c.author_name.as_deref().unwrap_or_default();
+            vec![c.branch_name.as_str(), author, remote_name]
         })
         .collect();
-    eprintln!("{}", lines.join("\n"));
+    let mut table = Table::new();
+    table.headers(&["Local", "Author", "Remote"]).data(&data);
+    format!("\n{table}")
+}
+
+fn get_branch_choices(repo: &Repository) -> Result<Vec<BranchChoice>, Error> {
+    let branches = repo.branches(Some(BranchType::Local))?;
+    let mut choices: Vec<_> = branches
+        .flatten()
+        .filter_map(|(branch, _t)| {
+            if branch.is_head() {
+                return None;
+            }
+            let branch_name = branch.name().ok().flatten()?;
+            if EXCLUDES.contains(&branch_name) {
+                return None;
+            }
+            let branch_name = branch_name.to_string();
+            let upstream = branch.upstream().ok();
+            let commit = branch.get().peel_to_commit().ok()?;
+            let secs = u64::try_from(commit.time().seconds()).unwrap_or_default();
+            let commit_time = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs))?;
+            let author = commit.author();
+            let author_name = author
+                .name()
+                .or_else(|| author.email().and_then(|s| s.split('@').next()))
+                .map(|s| s.to_string());
+            Some(BranchChoice {
+                local: branch,
+                upstream,
+                branch_name,
+                author_name,
+                commit_time,
+            })
+        })
+        .collect();
+    choices.sort_unstable_by_key(|c| c.commit_time);
+    Ok(choices)
 }
 
 fn get_local_name<'a>(branch: &'a Branch) -> Option<&'a str> {
@@ -55,7 +121,7 @@ fn delete_upstream_branch(
         let msg = format!("Failed to delete upstream branch {}", branch_name);
         eprintln!("{} {}", Emoji("⚠️", "!"), style(msg).yellow());
     }
-    branch.delete().ok()
+    branch.delete().map_err(|e| eprintln!("{e}")).ok()
 }
 
 fn get_render_config() -> RenderConfig<'static> {
@@ -71,23 +137,9 @@ fn main() -> Result<()> {
     Cli::parse();
     inquire::set_global_render_config(get_render_config());
     let repo = Repository::discover(".").wrap_err("Not a Git working folder")?;
-    let branches = repo.branches(Some(BranchType::Local))?;
     let staying_in_branch = repo.head().ok().map(|r| r.is_branch()).unwrap_or(false);
-    let names: Vec<String> = branches
-        .flatten()
-        .filter_map(|(branch, _type)| {
-            if branch.is_head() {
-                return None;
-            }
-            let n = branch.name().ok()??;
-            if EXCLUDES.contains(&n) {
-                None
-            } else {
-                Some(n.to_string())
-            }
-        })
-        .collect();
-    if names.is_empty() {
+    let branch_choices = get_branch_choices(&repo)?;
+    if branch_choices.is_empty() {
         eprintln!("No branches eligible to delete.");
         if staying_in_branch {
             eprintln!(
@@ -100,12 +152,15 @@ fn main() -> Result<()> {
         }
         return Ok(());
     }
-    let ans_branches = match MultiSelect::new("Select branches to delete", names).prompt() {
+    let ans_branches = match MultiSelect::new("Select branches to delete", branch_choices)
+        .with_formatter(&format_final_answers)
+        .prompt()
+    {
         Ok(ans) => ans,
         Err(InquireError::OperationCanceled) => return Ok(()),
         Err(e) => return Err(e.into()),
     };
-    let ans_up = match Confirm::new("Do you want to delete the upstream branches also")
+    let ans_up = match Confirm::new("Do you want to delete the upstream branches also?")
         .with_default(false)
         .prompt()
     {
@@ -113,21 +168,17 @@ fn main() -> Result<()> {
         Err(InquireError::OperationCanceled) => return Ok(()),
         Err(e) => return Err(e.into()),
     };
-    let msg = if ans_up {
-        "To delete these branches and their upstream:"
-    } else {
-        "To delete these branches:"
+    let ans_again = match Confirm::new("Ready to delete?")
+        .with_default(false)
+        .prompt()
+    {
+        Ok(ans) => ans,
+        Err(InquireError::OperationCanceled) => return Ok(()),
+        Err(e) => return Err(e.into()),
     };
-    eprintln!("{}", style(msg).blue());
-    let local_branches = get_branches(&repo, ans_branches);
-    let branch_pairs: Vec<(Branch, Option<Branch>)> = local_branches
-        .into_iter()
-        .map(|b| {
-            let upstream = b.upstream().ok();
-            (b, upstream)
-        })
-        .collect();
-    show_list_of_branches(&branch_pairs);
+    if !ans_again {
+        return Ok(());
+    }
     let mut remote_callback = RemoteCallbacks::new();
     let git_config = git2::Config::open_default()?;
     let mut credential_handler = CredentialHandler::new(git_config);
@@ -146,9 +197,15 @@ fn main() -> Result<()> {
     let mut origin = repo.find_remote("origin").ok();
     let mut opts = PushOptions::new();
     opts.remote_callbacks(remote_callback);
-    for (mut lb, rb) in branch_pairs {
-        lb.delete().ok();
-        if let Some((orig, branch)) = origin.as_mut().zip(rb) {
+    for mut c in ans_branches {
+        c.local
+            .delete()
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap_or_default();
+        if !ans_up {
+            continue;
+        }
+        if let Some((orig, branch)) = origin.as_mut().zip(c.upstream) {
             delete_upstream_branch(branch, orig, &mut opts);
         };
     }
