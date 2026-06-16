@@ -68,7 +68,7 @@ fn format_final_answers(opts: &[ListOption<&BranchChoice>]) -> String {
     format!("\n{table}")
 }
 
-fn get_branch_choices(repo: &Repository) -> Result<Vec<BranchChoice>, Error> {
+fn get_branch_choices(repo: &Repository) -> Result<Vec<BranchChoice<'_>>, Error> {
     let branches = repo.branches(Some(BranchType::Local))?;
     let mut choices: Vec<_> = branches
         .flatten()
