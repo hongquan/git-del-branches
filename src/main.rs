@@ -88,7 +88,8 @@ fn get_branch_choices(repo: &Repository) -> Result<Vec<BranchChoice>, Error> {
             let author = commit.author();
             let author_name = author
                 .name()
-                .or_else(|| author.email().and_then(|s| s.split('@').next()))
+                .ok()
+                .or_else(|| author.email().ok().and_then(|s| s.split('@').next()))
                 .map(|s| s.to_string());
             Some(BranchChoice {
                 local: branch,
